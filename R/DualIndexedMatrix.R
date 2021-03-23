@@ -130,9 +130,11 @@ setMethod("extract_array", "DualIndexedMatrixSeed", function(x, index) .dual_ext
 
 .dual_extract <- function(x, index, FUN) {
     if (is.null(index[[1]])) {
-        .extract_transposed(x@row, index, x@row.transposed, FUN=FUN)
-    } else if (is.null(index[[2]])) {
+        # Extracting an entire column.
         .extract_transposed(x@column, index, x@column.transposed, FUN=FUN)
+    } else if (is.null(index[[2]])) {
+        # Extracting an entire row.
+        .extract_transposed(x@row, index, x@row.transposed, FUN=FUN)
     } else {
         costs <- integer(length(index))
         sanitized <- index
@@ -148,10 +150,16 @@ setMethod("extract_array", "DualIndexedMatrixSeed", function(x, index) .dual_ext
             }
         }
 
-        if (costs[1] <= costs[2]) {
-            out <- .extract_transposed(x@row, sanitized, x@row.transposed, FUN=FUN)
-        } else {
+        # Computing the number of reads in either orientation. We multiply the number of reads
+        # per row (i.e., the number of separate column runs) by the number of rows to extract,
+        # and vice versa for the number of columns reads.
+        nreads.row <- length(sanitized[[1]]) * costs[2]
+        nreads.col <- costs[1] * length(sanitized[[2]])
+
+        if (nreads.col <= nreads.row) {
             out <- .extract_transposed(x@column, sanitized, x@column.transposed, FUN=FUN)
+        } else {
+            out <- .extract_transposed(x@row, sanitized, x@row.transposed, FUN=FUN)
         }
 
         # Quick and dirty reorganization for the reordering that we had to do.
