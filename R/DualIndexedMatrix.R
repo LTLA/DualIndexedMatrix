@@ -129,53 +129,23 @@ setMethod("extract_sparse_array", "DualIndexedMatrixSeed", function(x, index) .d
 setMethod("extract_array", "DualIndexedMatrixSeed", function(x, index) .dual_extract(x, index, FUN=extract_array))
 
 .dual_extract <- function(x, index, FUN) {
+    requested <- lengths(index)
     if (is.null(index[[1]])) {
-        # Extracting an entire column.
-        .extract_transposed(x@column, index, x@column.transposed, FUN=FUN)
-    } else if (is.null(index[[2]])) {
-        # Extracting an entire row.
-        .extract_transposed(x@row, index, x@row.transposed, FUN=FUN)
-    } else {
-        costs <- integer(length(index))
-        sanitized <- index
-
-        for (i in seq_along(sanitized)) {
-            # Guaranteed to be non-NULL at this point, no need to test.
-            current <- sanitized[[i]]
-            if (!all(diff(current)==1L)) {
-                sanitized[[i]] <- sort(unique(current))
-                costs[i] <- sum(diff(index[[i]])!=1L) + 1L # number of non-consecutive runs.
-            } else {
-                costs[i] <- 1L
-            }
-        }
-
-        # Computing the number of reads in either orientation. We multiply the number of reads
-        # per row (i.e., the number of separate column runs) by the number of rows to extract,
-        # and vice versa for the number of columns reads.
-        nreads.row <- length(sanitized[[1]]) * costs[2]
-        nreads.col <- costs[1] * length(sanitized[[2]])
-
-        if (nreads.col <= nreads.row) {
-            out <- .extract_transposed(x@column, sanitized, x@column.transposed, FUN=FUN)
-        } else {
-            out <- .extract_transposed(x@row, sanitized, x@row.transposed, FUN=FUN)
-        }
-
-        # Quick and dirty reorganization for the reordering that we had to do.
-        reindex <- vector("list", length(index))
-        for (i in seq_along(index)) {
-            if (costs[i] != 1L && !identical(index[[i]], sanitized[[i]])) {
-                reindex[[i]] <- match(index[[i]], sanitized[[i]])
-            }
-        }
-
-        if (is.null(reindex[[1]]) && is.null(reindex[[2]])) {
-            out
-        } else {
-            FUN(out, reindex)
-        }
+        requested[1] <- nrow(x)
     }
+    if (is.null(index[[2]])) {
+        requested[2] <- ncol(x)
+    }
+
+    if (requested[1] > requested[2]) {
+        # Fewer columns to extract than rows, so let's use a column format,
+        # as this will presumably involve fewer random accesses; the required
+        # rows can then be fished out cheaply from the extracted columns. 
+        .extract_transposed(x@column, index, x@column.transposed, FUN=FUN)
+    } else {
+        # Conversely, fewer random row accesses required here.
+        .extract_transposed(x@row, index, x@row.transposed, FUN=FUN)
+    } 
 }
 
 .extract_transposed <- function(seed, index, transposed, FUN) {
