@@ -110,6 +110,7 @@ setValidity2("DualIndexedMatrixSeed", function(object) {
 })
 
 #' @export
+#' @import DelayedArray
 setMethod("type", "DualIndexedMatrixSeed", function(x) type(x@row))
 
 #' @export
