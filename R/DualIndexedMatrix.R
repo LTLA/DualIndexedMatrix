@@ -26,24 +26,35 @@
 #'
 #' Setting \code{row.transposed=TRUE} indicates that the rows of the original dataset are stored in the columns of \code{row}.
 #' Similarly, setting \code{column.transposed=TRUE} indicates that the columns of the original dataset are stored in the rows of \code{column}.
-#' These are occasionally necessary to adapt to representations that have inherent preferred access patterns, e.g., \linkS4class{dgCMatrix}es in the Example.
+#' These are occasionally necessary to adapt to representations that inherently favor access on one dimension, e.g., compressed sparse column matrices.
 #' 
 #' @author Aaron Lun
 #'
 #' @examples
+#' library(HDF5Array)
+#' common.mat <- matrix(runif(2000000), ncol=1000)
+#'
+#' rowpath <- tempfile(fileext=".hdf5")
+#' invisible(writeHDF5Array(common.mat, rowpath, name="data", chunkdim=c(1, ncol(common.mat))))
+#'
+#' colpath <- tempfile(fileext=".hdf5")
+#' invisible(writeHDF5Array(common.mat, colpath, name="data", chunkdim=c(nrow(common.mat), 1)))
+#'
+#' # We store both in the DualIndexedMatrix, which will determine
+#' # which to use for best performance for a given access pattern.
+#' mat <- DualIndexedMatrix(HDF5ArraySeed(rowpath, "data"), HDF5ArraySeed(colpath, "data"))
+#'
+#' # Another example with sparse matrices. In this case, we transpose the data and set
+#' # row.transposed=TRUE so that we can keep using a dgCMatrix for rapid row access.
 #' library(Matrix)
 #' by.column <- rsparsematrix(100, 200, 0.1)
 #' class(by.column) # dgCMatrices enable efficient column access.
 #'
-#' # When we transpose, we obtain a new dgCMatrix where the columns
-#' # represent the original rows (and thus enable fast row access).
 #' by.row <- t(by.column) 
 #' class(by.row)
-#'
-#' # We store both in the DualIndexedMatrix, which will determine
-#' # which to use for best performance for a given access pattern.
+#' 
 #' mat <- DualIndexedMatrix(by.row, by.column, row.transposed=TRUE) 
-#'
+#' 
 #' @docType class
 #' @name DualIndexedMatrix-class
 #' @aliases
