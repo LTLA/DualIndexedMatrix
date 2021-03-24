@@ -1,0 +1,125 @@
+---
+title: Using DualIndexedMatrix objects
+author:
+- name: Aaron Lun
+  email: infinite.monkeys.with.keyboards@gmail.com
+package: BumpyMatrix
+date: "Revised: March 23, 2021"
+output:
+  BiocStyle::html_document:
+    toc_float: yes
+vignette: >
+  %\VignetteIndexEntry{The DualIndexedMatrix class}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(error=FALSE, warning=FALSE, message=FALSE)
+library(BiocStyle)
+set.seed(0)
+```
+
+# Motivation
+
+Some matrix representations inherently prefer access on one dimension.
+The compressed sparse column format (i.e., `dgCMatrix`) allow for rapid access to random columns but require a series of binary searches to obtain a random row.
+Similarly, HDF5 matrices can be chunked so that each row or column is a single chunk, enabling efficient access to either individual rows or columns - but not both at the same time.
+This is problematic as typical genomic analysis workflows require iteration across both rows and columns.
+
+For many file formats, the conventional solution is to use a compromise representation that provides good-enough access performance on both dimensions.
+However, if disk space/memory is not an issue, another strategy is to simply make two copies of the same dataset for optimal access on each dimension.
+One copy is indexed for rapid row access while the other copy is indexed for rapid column access,
+and we can dynamically switch between the two depending on the access pattern being used during the analysis.
+
+# The `DualIndexedMatrix` class
+
+The `DualIndexedMatrix` provides a `DelayedArray` subclass that implements this dynamic switching.
+Given two matrices with indexing on each dimension, it will automatically use the faster representation for data extraction.
+To illustrate, we will create two HDF5-backed copies of the same dataset, one chunked by row and the other chunked by column.
+
+```{r}
+library(HDF5Array)
+common.mat <- matrix(runif(2000000), ncol=1000)
+path <- tempfile(fileext=".hdf5")
+byrow <- writeHDF5Array(common.mat, path, name="byrow", chunkdim=c(1, ncol(common.mat)))
+bycol <- writeHDF5Array(common.mat, path, name="bycol", chunkdim=c(nrow(common.mat), 1))
+```
+
+Construction of the `DualIndexedMatrix` is straightforward.
+We set `row=` to a matrix (or the equivalent `DelayedArray` seed) that supports fast row access,
+and we set `column=` to another matrix that supports fast column access.
+
+```{r}
+library(DualIndexedMatrix)
+mat <- DualIndexedMatrix(row=HDF5ArraySeed(path, "byrow"), 
+    column=HDF5ArraySeed(path, "bycol"))
+mat
+```
+
+And that's it!
+
+# Demonstrating performance
+
+To compare, let's iterate over rows and compute the row sums.
+We'll use the `r Biocpkg("beachmat")` package for convenience and we'll lower the block sizes to get more iterations.
+(Otherwise, the matrix would be too small to see any difference in performance.)
+
+```{r}
+library(beachmat)
+setAutoBlockSize(1e5)
+
+system.time(rowBlockApply(byrow, FUN=rowSums))
+system.time(rowBlockApply(bycol, FUN=rowSums))
+system.time(rowBlockApply(mat, FUN=rowSums))
+```
+
+Similarly, we iterate over columns and compute the column sums.
+
+```{r}
+system.time(colBlockApply(byrow, FUN=colSums))
+system.time(colBlockApply(bycol, FUN=colSums))
+system.time(colBlockApply(mat, FUN=colSums))
+```
+
+We can see that the `DualIndexedMatrix` performs well in both dimensions while the others can only provide fast access in a single dimension.
+This is because the former can just switch between the latter two depending on the access pattern.
+
+Of course, this particular example is somewhat pathological as dense matrices are best stored in HDF5 with rectangular chunks.
+This gives decent performance in our example without needing to duplicate the dataset.
+
+```{r}
+rect <- writeHDF5Array(common.mat, path, name="square", chunkdim=c(100, 100))
+system.time(rowBlockApply(rect, FUN=rowSums))
+system.time(colBlockApply(rect, FUN=colSums))
+```
+
+Even so, the `DualIndexedMatrix` still exhibits a modest improvement. 
+This advantage can be expected to increase for non-consecutive row/column access where rectangular chunks are less efficient.
+The dual approach is also highly effective for formats that are inherently biased towards one dimension, e.g., the compressed sparse representation used in 10X Genomics output and H5AD files.
+
+# Internal transposition
+
+Advanced users can instruct the `DualIndexedMatrix` to dynamically transpose the seed contents during data extraction.
+This is mostly intended for cases where the implementation of the format clearly prefers access along one dimension.
+So, rather than trying to create a new implementation for the other dimension, we can transpose the data, 
+store it in the format of interest, and then un-transpose the data during extraction.
+
+The simplest example is that of the `dgCMatrix` class, which is the most well-supported sparse representation in the `r CRANpkg("Matrix")` package.
+(A `dgRMatrix` class technically exists but is rarely used.)
+If we want fast row access, the easiest solution is to transpose our input matrix so that obtaining a row involves quickly extracting a column from the transposed matrix.
+We can indicate that this is the case by setting `row.transposed=TRUE`, as shown below.
+
+```{r}
+library(Matrix)
+by.column <- rsparsematrix(100, 200, 0.1)
+by.row <- t(by.column) 
+mat <- DualIndexedMatrix(by.row, by.column, row.transposed=TRUE) 
+mat
+```
+
+# Session information {-}
+
+```{r}
+sessionInfo()
+```
