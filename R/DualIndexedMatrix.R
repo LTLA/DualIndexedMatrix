@@ -71,6 +71,7 @@
 NULL
 
 #' @export
+#' @import methods
 setClass("DualIndexedMatrixSeed", slots=c(row="ANY", column="ANY", row.transposed="logical", column.transposed="logical"))
 
 #' @export
