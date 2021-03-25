@@ -98,11 +98,11 @@ setValidity2("DualIndexedMatrixSeed", function(object) {
         return("inconsistent dimensions for row and column seeds")
     }
 
-    if (type(rdim)!=type(cdim)) {
+    if (type(object@row)!=type(object@column)) {
         return("inconsistent types for row and column seeds")
     }
 
-    if (is_sparse(rdim)!=is_sparse(cdim)) {
+    if (is_sparse(object@row)!=is_sparse(object@column)) {
         return("inconsistent sparsity for row and column seeds")
     }
 
