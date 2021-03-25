@@ -118,6 +118,18 @@ mat <- DualIndexedMatrix(by.row, by.column, row.transposed=TRUE)
 mat
 ```
 
+# Closing remarks
+
+The general philosophy here is to spend memory/disk space to improve access speed.
+Data providers pay an upfront cost to index the dataset in both dimensions, which users can exploit by creating a `DualIndexedMatrix` for their analyses.
+Indeed, even if the data provider _is_ the user, faster access throughout the lifetime of an analysis project will usually outweigh any indexing costs.
+This is most relevant for large datasets that require file-backed representations and time-consuming disk I/O, where the benefits of optimized access are more apparent.
+
+On that note: file formats like HDF5 are particularly convenient for this strategy, as both copies of the dataset can be stored in the same file.
+This simplifies the management of the dataset, e.g., downloading, caching and synchronization of the dual indexed copies.
+However, any format or file organisation can be used as long as the data is the same in both copies.
+In fact, one can even use combinations of file-backed or in-memory formats in the `DualIndexedMatrix`, depending on what is available.
+
 # Session information {-}
 
 ```{r}
